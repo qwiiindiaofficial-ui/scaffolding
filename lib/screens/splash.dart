@@ -22,7 +22,11 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    appController = AppController.to;
+    try {
+      appController = AppController.to;
+    } catch (e) {
+      print('Error getting AppController: $e');
+    }
     getContactPermission();
     _navigateToNextPage();
   }

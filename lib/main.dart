@@ -82,10 +82,15 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
+    print('Initializing Supabase...');
     await SupabaseService.initialize();
+    print('Supabase initialized successfully');
+
+    print('Initializing AppController...');
     Get.put(AppController());
+    print('AppController initialized successfully');
   } catch (e) {
-    print('Failed to initialize Supabase: $e');
+    print('Failed to initialize: $e');
   }
 
   runApp(

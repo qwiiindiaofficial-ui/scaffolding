@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseService {
@@ -13,11 +14,14 @@ class SupabaseService {
 
   static Future<void> initialize() async {
     try {
-      const supabaseUrl = String.fromEnvironment('SUPABASE_URL', defaultValue: '');
-      const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
+      // Load environment variables from .env file
+      await dotenv.load(fileName: '.env');
+
+      final supabaseUrl = dotenv.env['VITE_SUPABASE_URL'] ?? '';
+      final supabaseAnonKey = dotenv.env['VITE_SUPABASE_ANON_KEY'] ?? '';
 
       if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
-        throw Exception('Supabase credentials not found in environment');
+        throw Exception('Supabase credentials not found in .env file');
       }
 
       await Supabase.initialize(
