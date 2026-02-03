@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:scaffolding_sale/backend/supabase_service.dart';
+import 'package:scaffolding_sale/controllers/app_controller.dart';
 import 'package:scaffolding_sale/screens/auth/register/form.dart';
 import 'package:scaffolding_sale/screens/home/home.dart';
 import 'package:scaffolding_sale/screens/splash.dart';
@@ -81,6 +83,7 @@ void main() async {
 
   try {
     await SupabaseService.initialize();
+    Get.put(AppController());
   } catch (e) {
     print('Failed to initialize Supabase: $e');
   }
@@ -96,9 +99,9 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return GetMaterialApp(
         debugShowCheckedModeBanner: false,
-        title: 'Flutter Demo',
+        title: 'Scaffolding & Shuttering App',
         theme: ThemeData(
           useMaterial3: true,
           primaryColor: ThemeColors.kPrimaryThemeColor,
