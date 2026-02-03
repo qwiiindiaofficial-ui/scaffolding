@@ -1,0 +1,682 @@
+import 'package:flutter/material.dart';
+import 'package:scaffolding_sale/screens/BankDetail.dart';
+import 'package:scaffolding_sale/screens/auth/register/otherwidget.dart';
+import 'package:scaffolding_sale/screens/home/Union/view.dart';
+import 'package:scaffolding_sale/screens/profile/EditProfile.dart';
+import 'package:scaffolding_sale/utils/colors.dart';
+import 'package:scaffolding_sale/widgets/text.dart';
+import 'package:upi_payment_qrcode_generator/upi_payment_qrcode_generator.dart';
+import 'package:share_plus/share_plus.dart';
+
+import 'dart:convert';
+import 'package:fluttertoast/fluttertoast.dart';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
+class Coustomers extends StatefulWidget {
+  const Coustomers({super.key});
+
+  @override
+  State<Coustomers> createState() => _CoustomersState();
+}
+
+class _CoustomersState extends State<Coustomers> {
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> allCustomers = [];
+  List<Map<String, dynamic>> filteredCustomers = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadParties();
+  }
+
+  Future<void> _loadParties() async {
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final List<String>? partiesJsonList = prefs.getStringList('parties_list');
+
+      if (partiesJsonList != null && partiesJsonList.isNotEmpty) {
+        List<Map<String, dynamic>> loadedParties = [];
+
+        for (String partyJson in partiesJsonList) {
+          try {
+            final Map<String, dynamic> partyData = jsonDecode(partyJson);
+            loadedParties.add(partyData);
+          } catch (e) {
+            print('Error parsing party data: $e');
+          }
+        }
+
+        setState(() {
+          allCustomers = loadedParties;
+          filteredCustomers = loadedParties;
+        });
+      }
+    } catch (e) {
+      print('Error loading parties: $e');
+      Fluttertoast.showToast(msg: "Error loading customers");
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _deleteParty(String partyId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final List<String>? partiesJsonList = prefs.getStringList('parties_list');
+
+      if (partiesJsonList != null) {
+        List<String> updatedList = [];
+
+        for (String partyJson in partiesJsonList) {
+          final Map<String, dynamic> partyData = jsonDecode(partyJson);
+          if (partyData['id'] != partyId) {
+            updatedList.add(partyJson);
+          }
+        }
+
+        await prefs.setStringList('parties_list', updatedList);
+        await _loadParties(); // Reload the list
+
+        Fluttertoast.showToast(msg: "Customer deleted successfully");
+      }
+    } catch (e) {
+      print('Error deleting party: $e');
+      Fluttertoast.showToast(msg: "Error deleting customer");
+    }
+  }
+
+  void _showPaymentRequestSheet(String customerName) {
+    final TextEditingController amountController = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+              top: 16,
+              left: 16,
+              right: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text("Send Payment Request to $customerName",
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 18)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: "Enter Amount",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: () {
+                  final amountText = amountController.text.trim();
+                  if (amountText.isEmpty ||
+                      double.tryParse(amountText) == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text("Please enter a valid amount")),
+                    );
+                    return;
+                  }
+                  Navigator.pop(context); // Close bottom sheet
+                  _showQRCodeDialog(customerName, double.parse(amountText));
+                },
+                child: const Text("OK"),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showQRCodeDialog(String customerName, double amount) async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUpiId = prefs.getString('upiId') ?? '';
+
+    final upiDetails = UPIDetails(
+      upiID: savedUpiId, // Use saved UPI ID
+      payeeName: customerName,
+      amount: amount,
+      transactionNote: "Payment request for $customerName",
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Payment QR Code for $customerName"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              UPIPaymentQRCode(
+                upiDetails: upiDetails,
+                size: 220,
+                upiQRErrorCorrectLevel: UPIQRErrorCorrectLevel.low,
+              ),
+              const SizedBox(height: 12),
+              Text("Scan QR to Pay",
+                  style:
+                      TextStyle(color: Colors.grey[600], letterSpacing: 1.2)),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.share),
+                label: const Text("Share QR Code"),
+                onPressed: () async {
+                  await Share.share(
+                      'Payment Reminder for $customerName: ₹$amount');
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Close"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void filterCustomers(String query) {
+    setState(() {
+      if (query.isEmpty) {
+        filteredCustomers = allCustomers;
+      } else {
+        filteredCustomers = allCustomers
+            .where((customer) =>
+                (getPartyName(customer))
+                    .toString()
+                    .toLowerCase()
+                    .contains(query.toLowerCase()) ||
+                (getPartyAddress(customer))
+                    .toString()
+                    .toLowerCase()
+                    .contains(query.toLowerCase()) ||
+                (getPartyIdentifier(customer))
+                    .toString()
+                    .toLowerCase()
+                    .contains(query.toLowerCase()))
+            .toList();
+      }
+    });
+  }
+
+  String getPartyName(Map<String, dynamic> party) {
+    if (party['register_type'] == '1') {
+      // GST Registered
+      if (party['gst_trade_name'] != null &&
+          party['gst_trade_name'].toString().isNotEmpty) {
+        return party['gst_trade_name'];
+      } else if (party['gst_legal_name'] != null &&
+          party['gst_legal_name'].toString().isNotEmpty) {
+        return party['gst_legal_name'];
+      } else {
+        return 'GST Party';
+      }
+    } else if (party['register_type'] == '2') {
+      // Unregistered (Aadhaar)
+      if (party['aadhaar_name'] != null &&
+          party['aadhaar_name'].toString().isNotEmpty) {
+        return party['aadhaar_name'];
+      } else if (party['name'] != null && party['name'].toString().isNotEmpty) {
+        return party['name'];
+      } else {
+        return 'Aadhaar Party';
+      }
+    } else if (party['register_type'] == '3') {
+      // Already a user
+      if (party['name'] != null && party['name'].toString().isNotEmpty) {
+        return party['name'];
+      } else {
+        return 'User Party';
+      }
+    }
+    return 'Unknown Party';
+  }
+
+  String getPartyAddress(Map<String, dynamic> party) {
+    if (party['register_type'] == '1') {
+      if (party['gst_address'] != null &&
+          party['gst_address'].toString().isNotEmpty) {
+        return party['gst_address'];
+      } else {
+        return 'No address available';
+      }
+    } else if (party['register_type'] == '2') {
+      if (party['aadhaar_address'] != null &&
+          party['aadhaar_address'].toString().isNotEmpty) {
+        return party['aadhaar_address'];
+      } else {
+        return 'No address available';
+      }
+    } else if (party['register_type'] == '3') {
+      return 'No address available';
+    }
+    return 'No address available';
+  }
+
+  String getPartyIdentifier(Map<String, dynamic> party) {
+    if (party['register_type'] == '1' && party['gst_number'] != null) {
+      return 'GST: ${party['gst_number']}';
+    } else if (party['register_type'] == '2' &&
+        party['aadhar_number'] != null) {
+      return 'Aadhaar: ${party['aadhar_number']}';
+    } else if (party['register_type'] == '3') {
+      if (party['is_scaffolding_id'] == true &&
+          party['scaffolding_id'] != null) {
+        return 'ID: ${party['scaffolding_id']}';
+      } else if (party['mobile_number'] != null) {
+        return 'Mobile: ${party['mobile_number']}';
+      }
+    }
+    return '';
+  }
+
+  Future<bool> _hasBankDetails() async {
+    final prefs = await SharedPreferences.getInstance();
+    final upiId = prefs.getString('upiId') ?? '';
+    return upiId.isNotEmpty;
+  }
+
+  String getRegistrationTypeLabel(Map<String, dynamic> party) {
+    if (party['register_type'] == '1') {
+      return 'GST Registered';
+    } else if (party['register_type'] == '2') {
+      return 'Unregistered';
+    } else if (party['register_type'] == '3') {
+      return 'Existing User';
+    }
+    return 'Unknown';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: ThemeColors.kPrimaryThemeColor,
+        title: CustomText(
+          text: "Customers",
+          color: ThemeColors.kWhiteTextColor,
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios),
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+        ),
+        actions: [
+          InkWell(
+            onTap: () {
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const EditProfile())).then((_) =>
+                  _loadParties()); // Reload parties when returning from add screen
+            },
+            child: Container(
+              height: 32,
+              decoration: BoxDecoration(
+                color: ThemeColors.kSecondaryThemeColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: Center(
+                  child: CustomText(
+                    text: "New Customer",
+                    size: 12,
+                    color: ThemeColors.kWhiteTextColor,
+                    weight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: RegisterField(
+              hint: "Search by name, address or ID...",
+              controller: _searchController,
+              onChanged: filterCustomers,
+            ),
+          ),
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : filteredCustomers.isEmpty
+                    ? const Center(
+                        child: Text(
+                          "No customers found",
+                          style: TextStyle(fontSize: 16, color: Colors.grey),
+                        ),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: ListView.builder(
+                          itemCount: filteredCustomers.length,
+                          itemBuilder: (context, index) {
+                            final customerData = filteredCustomers[index];
+                            final partyName = getPartyName(customerData);
+                            final partyAddress = getPartyAddress(customerData);
+                            final partyIdentifier =
+                                getPartyIdentifier(customerData);
+                            final partyId = customerData['id'] ?? '';
+                            final registrationType =
+                                getRegistrationTypeLabel(customerData);
+
+                            // Determine registration status icon/color
+                            IconData statusIcon;
+                            Color statusColor;
+
+                            if (customerData['register_type'] == '1') {
+                              statusIcon = Icons.business;
+                              statusColor = Colors.green;
+                            } else if (customerData['register_type'] == '2') {
+                              statusIcon = Icons.person;
+                              statusColor = Colors.orange;
+                            } else {
+                              statusIcon = Icons.account_circle;
+                              statusColor = Colors.blue;
+                            }
+
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: Container(
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  border:
+                                      Border.all(color: Colors.grey.shade300),
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.grey.withOpacity(0.1),
+                                      spreadRadius: 1,
+                                      blurRadius: 2,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                  color: Colors.white,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 10),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10),
+                                      child: Container(
+                                        height: 44,
+                                        width: double.infinity,
+                                        decoration: BoxDecoration(
+                                          color: ThemeColors.kPrimaryThemeColor,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        child: InkWell(
+                                          onTap: () {},
+                                          child: Row(
+                                            children: [
+                                              const SizedBox(width: 10),
+                                              CircleAvatar(
+                                                backgroundColor: Colors.white,
+                                                child: Icon(
+                                                  statusIcon,
+                                                  color: statusColor,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 10),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    CustomText(
+                                                      text: partyName,
+                                                      size: 16,
+                                                      color: Colors.white,
+                                                      weight: FontWeight.w500,
+                                                    ),
+                                                    CustomText(
+                                                      text: registrationType,
+                                                      size: 12,
+                                                      color: Colors.white70,
+                                                      weight: FontWeight.w400,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.all(10),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          if (partyIdentifier.isNotEmpty) ...[
+                                            CustomText(
+                                              text: partyIdentifier,
+                                              color: Colors.black87,
+                                              size: 14,
+                                              weight: FontWeight.w500,
+                                            ),
+                                            const SizedBox(height: 4),
+                                          ],
+                                          CustomText(
+                                            text: partyAddress,
+                                            color: Colors.black54,
+                                            size: 13,
+                                            weight: FontWeight.w400,
+                                          ),
+                                          // Show additional info for Aadhaar parties
+                                          if (customerData['register_type'] ==
+                                                  '2' &&
+                                              customerData['aadhaar_dob'] !=
+                                                  null) ...[
+                                            const SizedBox(height: 4),
+                                            CustomText(
+                                              text:
+                                                  "DOB: ${customerData['aadhaar_dob']}",
+                                              color: Colors.black54,
+                                              size: 12,
+                                              weight: FontWeight.w400,
+                                            ),
+                                          ],
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.end,
+                                            children: [
+                                              if (customerData['email'] !=
+                                                      null &&
+                                                  customerData['email']
+                                                      .toString()
+                                                      .isNotEmpty)
+                                                IconButton(
+                                                  icon: const Icon(Icons.email,
+                                                      color: Colors.blue),
+                                                  onPressed: () {
+                                                    Fluttertoast.showToast(
+                                                        msg:
+                                                            "Email functionality not implemented");
+                                                  },
+                                                  tooltip: "Send Email",
+                                                ),
+                                              if (customerData[
+                                                          'mobile_number'] !=
+                                                      null ||
+                                                  (customerData['contacts'] !=
+                                                          null &&
+                                                      (customerData['contacts']
+                                                              as List)
+                                                          .isNotEmpty))
+                                                IconButton(
+                                                  icon: const Icon(Icons.phone,
+                                                      color: Colors.green),
+                                                  onPressed: () {
+                                                    Fluttertoast.showToast(
+                                                        msg:
+                                                            "Call functionality not implemented");
+                                                  },
+                                                  tooltip: "Call",
+                                                ),
+                                              PopupMenuButton(
+                                                icon: const Icon(
+                                                    Icons.more_vert,
+                                                    color: Colors.black),
+                                                itemBuilder: (context) =>
+                                                    const [
+                                                  PopupMenuItem(
+                                                    value:
+                                                        'Send Payment Request',
+                                                    child: Text(
+                                                        "Send Payment Request",
+                                                        style: TextStyle(
+                                                            color:
+                                                                Colors.black)),
+                                                  ),
+                                                  PopupMenuItem(
+                                                    value: 'View',
+                                                    child: Text("View Details",
+                                                        style: TextStyle(
+                                                            color:
+                                                                Colors.black)),
+                                                  ),
+                                                  PopupMenuItem(
+                                                    value: 'Delete',
+                                                    child: Text("Delete",
+                                                        style: TextStyle(
+                                                            color: Colors.red)),
+                                                  ),
+                                                ],
+                                                onSelected: (value) async {
+                                                  if (value ==
+                                                      'Send Payment Request') {
+                                                    _hasBankDetails()
+                                                        .then((hasDetails) {
+                                                      if (hasDetails) {
+                                                        _showPaymentRequestSheet(
+                                                            partyName);
+                                                      } else {
+                                                        Navigator.push(
+                                                          context,
+                                                          MaterialPageRoute(
+                                                              builder: (context) =>
+                                                                  Bankdetail()),
+                                                        );
+                                                      }
+                                                    });
+                                                  } else if (value == 'Edit') {
+                                                    // Navigate to edit screen
+                                                    Fluttertoast.showToast(
+                                                        msg:
+                                                            "Edit functionality not implemented");
+                                                  } else if (value == 'View') {
+                                                    // Navigate to view details screen
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (context) =>
+                                                            ViewDetails(
+                                                                partyId:
+                                                                    partyId),
+                                                      ),
+                                                    );
+                                                  } else if (value ==
+                                                      'Delete') {
+                                                    final confirm =
+                                                        await showDialog<bool>(
+                                                      context: context,
+                                                      builder: (context) =>
+                                                          AlertDialog(
+                                                        title: const Text(
+                                                            "Delete Customer"),
+                                                        content: const Text(
+                                                            "Are you sure you want to delete this customer?"),
+                                                        actions: [
+                                                          TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                    context,
+                                                                    false),
+                                                            child: const Text(
+                                                                "Cancel"),
+                                                          ),
+                                                          TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                    context,
+                                                                    true),
+                                                            child: const Text(
+                                                                "Delete",
+                                                                style: TextStyle(
+                                                                    color: Colors
+                                                                        .red)),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    );
+                                                    if (confirm == true) {
+                                                      await _deleteParty(
+                                                          partyId);
+                                                    }
+                                                  }
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+}

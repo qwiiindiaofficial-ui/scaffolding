@@ -1,0 +1,2 @@
+/Users/bajaj/Downloads/scaffolding_sale 2/android/app/.cxx/RelWithDebInfo/1656e142/armeabi-v7a/CMakeFiles/rebuild_cache.dir
+/Users/bajaj/Downloads/scaffolding_sale 2/android/app/.cxx/RelWithDebInfo/1656e142/armeabi-v7a/CMakeFiles/edit_cache.dir

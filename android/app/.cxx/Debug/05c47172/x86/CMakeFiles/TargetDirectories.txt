@@ -1,0 +1,2 @@
+/Users/bajaj/Downloads/scaffolding_sale 2/android/app/.cxx/Debug/05c47172/x86/CMakeFiles/rebuild_cache.dir
+/Users/bajaj/Downloads/scaffolding_sale 2/android/app/.cxx/Debug/05c47172/x86/CMakeFiles/edit_cache.dir
