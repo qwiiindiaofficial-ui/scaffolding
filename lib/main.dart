@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:scaffolding_sale/backend/supabase_service.dart';
 import 'package:scaffolding_sale/screens/auth/register/form.dart';
 import 'package:scaffolding_sale/screens/home/home.dart';
 import 'package:scaffolding_sale/screens/splash.dart';
@@ -75,8 +76,15 @@ Future<void> showDownloadOptions(BuildContext context) async {
   );
 }
 
-void main() {
-  // exit(0);
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await SupabaseService.initialize();
+  } catch (e) {
+    print('Failed to initialize Supabase: $e');
+  }
+
   runApp(
     const SafeArea(
       child: MyApp(),
