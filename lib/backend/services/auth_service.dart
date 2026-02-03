@@ -1,20 +1,93 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'package:fluttertoast/fluttertoast.dart';
 import '../supabase_service.dart';
+import 'dart:math';
 
 class AuthService {
   final SupabaseClient _client = SupabaseService.client;
 
-  Future<AuthResponse> signInWithPhone(String phoneNumber) async {
-    return await _client.auth.signInWithOtp(
-      phone: phoneNumber,
-    );
+  static void _sendOTPViaSMS(String phone, String otp) async {
+    String url =
+        "http://hindit.co.in/API/pushsms.aspx?loginID=T1Techcanopus&password=tech1234&mobile=${phone}&text=$otp is your OTP to register. DO NOT share with anyone. The OTP expires in 10 mins. TECHCANOPUS&senderid=TECNPS&route_id=3&Unicode=0&IP=x.x.x.x&Template_id=1707171101520604654";
+
+    try {
+      final response = await http.get(Uri.parse(url));
+      print(response.body);
+      if (response.statusCode == 200) {
+        Fluttertoast.showToast(msg: "OTP Sent Successfully");
+      } else {
+        Fluttertoast.showToast(msg: "Failed To Send OTP");
+      }
+    } catch (error) {
+      print('Error sending OTP: $error');
+    }
   }
 
-  Future<AuthResponse> verifyOTP(String phoneNumber, String token) async {
-    return await _client.auth.verifyOTP(
-      phone: phoneNumber,
-      token: token,
-      type: OtpType.sms,
+  Future<void> sendOTPToPhone(String phoneNumber) async {
+    try {
+      String otp = (100000 + Random().nextInt(900000)).toString();
+
+      await _client.from('otp_sessions').insert({
+        'phone_number': phoneNumber,
+        'otp_code': otp,
+        'is_verified': false,
+        'attempts': 0,
+      });
+
+      _sendOTPViaSMS(phoneNumber, otp);
+    } catch (e) {
+      throw Exception('Failed to send OTP: $e');
+    }
+  }
+
+  Future<bool> verifyOTP(String phoneNumber, String otp) async {
+    try {
+      final response = await _client
+          .from('otp_sessions')
+          .select()
+          .eq('phone_number', phoneNumber)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (response == null) {
+        throw Exception('No OTP session found');
+      }
+
+      final expiresAt = DateTime.parse(response['expires_at']);
+      if (DateTime.now().isAfter(expiresAt)) {
+        throw Exception('OTP has expired');
+      }
+
+      if (response['otp_code'] != otp) {
+        int attempts = response['attempts'] ?? 0;
+        await _client
+            .from('otp_sessions')
+            .update({'attempts': attempts + 1})
+            .eq('id', response['id']);
+        throw Exception('Invalid OTP');
+      }
+
+      await _client
+          .from('otp_sessions')
+          .update({'is_verified': true})
+          .eq('id', response['id']);
+
+      return true;
+    } catch (e) {
+      throw Exception('OTP verification failed: $e');
+    }
+  }
+
+  Future<AuthResponse> signUpWithPassword(
+    String phoneNumber,
+    String password,
+  ) async {
+    final email = '${phoneNumber.replaceAll('+', '')}@app.local';
+    return await _client.auth.signUp(
+      email: email,
+      password: password,
     );
   }
 

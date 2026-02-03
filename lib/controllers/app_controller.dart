@@ -108,7 +108,7 @@ class AppController extends GetxController {
       isLoading.value = true;
       errorMessage.value = null;
 
-      await authService.signInWithPhone(phoneNumber);
+      await authService.sendOTPToPhone(phoneNumber);
       return true;
     } catch (e) {
       errorMessage.value = 'Login failed: $e';
@@ -124,12 +124,8 @@ class AppController extends GetxController {
       isLoading.value = true;
       errorMessage.value = null;
 
-      final response = await authService.verifyOTP(phoneNumber, otp);
-      if (response.user != null) {
-        await loadUserProfile(response.user!.id);
-        return true;
-      }
-      return false;
+      await authService.verifyOTP(phoneNumber, otp);
+      return true;
     } catch (e) {
       errorMessage.value = 'OTP verification failed: $e';
       print('OTP error: $e');
