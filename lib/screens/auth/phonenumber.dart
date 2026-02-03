@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
-import 'package:scaffolding_sale/backend/methods.dart';
-
+import 'package:get/get.dart';
+import 'package:scaffolding_sale/controllers/app_controller.dart';
+import 'package:scaffolding_sale/utils/app_helpers.dart';
 import '../../utils/colors.dart';
 import '../../widgets/button.dart';
 import '../../widgets/logo.dart';
@@ -108,24 +108,27 @@ class PhoneNumberScreen extends StatelessWidget {
                     onTap: () async {
                       final value = _phoneController.text;
                       if (value.isEmpty) {
-                        Fluttertoast.showToast(
-                            msg: "Please Enter Your Mobile Number");
+                        showError("Please Enter Your Mobile Number");
                       } else if (value.length != 10) {
-                        Fluttertoast.showToast(
-                            msg: "Mobile number must be 10 digits");
+                        showError("Mobile number must be 10 digits");
                       } else if (!RegExp(r'^[6-9]\d{9}$').hasMatch(value)) {
-                        Fluttertoast.showToast(
-                            msg: "Enter a valid Indian mobile number");
+                        showError("Enter a valid Indian mobile number");
                       } else {
-                        final otp = AppService().generateOTP();
-                        AppService.sendOTP(value, otp);
-                        Navigator.push(context,
-                            MaterialPageRoute(builder: (context) {
-                          return OTPScreen(
-                            otp: otp,
-                            phone: value,
-                          );
-                        }));
+                        try {
+                          showLoadingDialog('Sending OTP...');
+                          final phoneNumber = '+91$value';
+                          await AppController.to.loginWithPhone(phoneNumber);
+                          closeLoadingDialog();
+                          showSuccess('OTP sent to $phoneNumber');
+                          if (mounted) {
+                            Get.to(() => OTPScreen(
+                              phone: value,
+                            ));
+                          }
+                        } catch (e) {
+                          closeLoadingDialog();
+                          handleError(e);
+                        }
                       }
                     },
                     text: "Next",

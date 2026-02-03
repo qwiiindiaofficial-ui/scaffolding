@@ -1,22 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:dotted_border/dotted_border.dart'; // Import dotted_border
+import 'package:dotted_border/dotted_border.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
+import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:scaffolding_sale/controllers/app_controller.dart';
 import 'package:scaffolding_sale/screens/auth/register/otherwidget.dart';
 import 'package:scaffolding_sale/screens/auth/register/radiusdialoge.dart';
 import 'package:scaffolding_sale/screens/auth/register/scanner.dart';
-// Make sure this path is correct
 import 'package:scaffolding_sale/screens/home/home.dart';
+import 'package:scaffolding_sale/utils/app_helpers.dart';
 import 'package:scaffolding_sale/utils/colors.dart';
 import 'package:scaffolding_sale/widgets/button.dart';
 import 'package:scaffolding_sale/widgets/text.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 // Import the new QR scanner screen
 
@@ -477,9 +477,39 @@ class _RegisterFormState extends State<RegisterForm>
     };
   }
 
-  Future<void> saveSessionData(Map<String, dynamic> data) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('register_form_data', jsonEncode(data));
+  Future<void> createCompanyAndProfile(Map<String, dynamic> data) async {
+    try {
+      final appController = AppController.to;
+      final authUser = appController.authService.currentUser;
+
+      if (authUser == null) {
+        throw Exception('User not authenticated');
+      }
+
+      final companyName = data['gst_legal_name'] ?? data['aadhaar_name'] ?? 'Company';
+      final gstNumber = data['gst_number'] ?? '';
+
+      final company = await appController.companyService.createCompany(
+        name: companyName,
+        gstNumber: gstNumber.isNotEmpty ? gstNumber : null,
+        billingAddress: data['gst_address'] ?? data['aadhaar_address'] ?? '',
+        phone: '+91${widget.phone}',
+        ownerName: data['aadhaar_name'],
+        businessType: data['gst_company_type'],
+      );
+
+      await appController.authService.createUserProfile(
+        userId: authUser.id,
+        companyId: company['id'],
+        phoneNumber: '+91${widget.phone}',
+        fullName: data['aadhaar_name'],
+        role: 'admin',
+      );
+
+      await appController.loadUserProfile(authUser.id);
+    } catch (e) {
+      throw Exception('Failed to create company: $e');
+    }
   }
 
   @override
@@ -936,16 +966,18 @@ class _RegisterFormState extends State<RegisterForm>
                 PrimaryButton(
                   onTap: () async {
                     if (_formKey.currentState!.validate()) {
-                      final data = collectFormData();
-                      await saveSessionData(data);
-                      Fluttertoast.showToast(msg: "Data Added Successfully");
-                      if (mounted) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) =>
-                                  HomeScreen(phone: widget.phone)),
-                        );
+                      try {
+                        showLoadingDialog('Creating company profile...');
+                        final data = collectFormData();
+                        await createCompanyAndProfile(data);
+                        closeLoadingDialog();
+                        showSuccess('Profile created successfully');
+                        if (mounted) {
+                          Get.offAll(() => HomeScreen(phone: widget.phone));
+                        }
+                      } catch (e) {
+                        closeLoadingDialog();
+                        handleError(e);
                       }
                     }
                   },

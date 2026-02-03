@@ -8,10 +8,9 @@ import 'package:scaffolding_sale/widgets/text.dart';
 import 'package:upi_payment_qrcode_generator/upi_payment_qrcode_generator.dart';
 import 'package:share_plus/share_plus.dart';
 
-import 'dart:convert';
-import 'package:fluttertoast/fluttertoast.dart';
-
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:get/get.dart';
+import 'package:scaffolding_sale/controllers/app_controller.dart';
+import 'package:scaffolding_sale/utils/app_helpers.dart';
 
 class Coustomers extends StatefulWidget {
   const Coustomers({super.key});
@@ -38,29 +37,25 @@ class _CoustomersState extends State<Coustomers> {
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final List<String>? partiesJsonList = prefs.getStringList('parties_list');
+      final appController = AppController.to;
+      final companyId = appController.companyId;
 
-      if (partiesJsonList != null && partiesJsonList.isNotEmpty) {
-        List<Map<String, dynamic>> loadedParties = [];
-
-        for (String partyJson in partiesJsonList) {
-          try {
-            final Map<String, dynamic> partyData = jsonDecode(partyJson);
-            loadedParties.add(partyData);
-          } catch (e) {
-            print('Error parsing party data: $e');
-          }
-        }
-
-        setState(() {
-          allCustomers = loadedParties;
-          filteredCustomers = loadedParties;
-        });
+      if (companyId == null) {
+        showError('Company not found');
+        return;
       }
+
+      final parties = await appController.partyService.getParties(
+        companyId: companyId,
+        partyType: 'customer',
+      );
+
+      setState(() {
+        allCustomers = parties;
+        filteredCustomers = parties;
+      });
     } catch (e) {
-      print('Error loading parties: $e');
-      Fluttertoast.showToast(msg: "Error loading customers");
+      showError('Error loading customers');
     } finally {
       setState(() {
         isLoading = false;
@@ -70,27 +65,14 @@ class _CoustomersState extends State<Coustomers> {
 
   Future<void> _deleteParty(String partyId) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final List<String>? partiesJsonList = prefs.getStringList('parties_list');
-
-      if (partiesJsonList != null) {
-        List<String> updatedList = [];
-
-        for (String partyJson in partiesJsonList) {
-          final Map<String, dynamic> partyData = jsonDecode(partyJson);
-          if (partyData['id'] != partyId) {
-            updatedList.add(partyJson);
-          }
-        }
-
-        await prefs.setStringList('parties_list', updatedList);
-        await _loadParties(); // Reload the list
-
-        Fluttertoast.showToast(msg: "Customer deleted successfully");
-      }
+      showLoadingDialog('Deleting customer...');
+      await AppController.to.partyService.deleteParty(partyId);
+      closeLoadingDialog();
+      showSuccess('Customer deleted successfully');
+      await _loadParties();
     } catch (e) {
-      print('Error deleting party: $e');
-      Fluttertoast.showToast(msg: "Error deleting customer");
+      closeLoadingDialog();
+      showError('Error deleting customer');
     }
   }
 
@@ -223,91 +205,44 @@ class _CoustomersState extends State<Coustomers> {
   }
 
   String getPartyName(Map<String, dynamic> party) {
-    if (party['register_type'] == '1') {
-      // GST Registered
-      if (party['gst_trade_name'] != null &&
-          party['gst_trade_name'].toString().isNotEmpty) {
-        return party['gst_trade_name'];
-      } else if (party['gst_legal_name'] != null &&
-          party['gst_legal_name'].toString().isNotEmpty) {
-        return party['gst_legal_name'];
-      } else {
-        return 'GST Party';
-      }
-    } else if (party['register_type'] == '2') {
-      // Unregistered (Aadhaar)
-      if (party['aadhaar_name'] != null &&
-          party['aadhaar_name'].toString().isNotEmpty) {
-        return party['aadhaar_name'];
-      } else if (party['name'] != null && party['name'].toString().isNotEmpty) {
-        return party['name'];
-      } else {
-        return 'Aadhaar Party';
-      }
-    } else if (party['register_type'] == '3') {
-      // Already a user
-      if (party['name'] != null && party['name'].toString().isNotEmpty) {
-        return party['name'];
-      } else {
-        return 'User Party';
-      }
-    }
-    return 'Unknown Party';
+    return party['name'] ?? party['company_name'] ?? 'Unknown';
   }
 
   String getPartyAddress(Map<String, dynamic> party) {
-    if (party['register_type'] == '1') {
-      if (party['gst_address'] != null &&
-          party['gst_address'].toString().isNotEmpty) {
-        return party['gst_address'];
-      } else {
-        return 'No address available';
-      }
-    } else if (party['register_type'] == '2') {
-      if (party['aadhaar_address'] != null &&
-          party['aadhaar_address'].toString().isNotEmpty) {
-        return party['aadhaar_address'];
-      } else {
-        return 'No address available';
-      }
-    } else if (party['register_type'] == '3') {
-      return 'No address available';
-    }
-    return 'No address available';
+    return party['billing_address'] ?? party['shipping_address'] ?? 'No address';
   }
 
   String getPartyIdentifier(Map<String, dynamic> party) {
-    if (party['register_type'] == '1' && party['gst_number'] != null) {
+    if (party['gst_number'] != null && party['gst_number'].toString().isNotEmpty) {
       return 'GST: ${party['gst_number']}';
-    } else if (party['register_type'] == '2' &&
-        party['aadhar_number'] != null) {
-      return 'Aadhaar: ${party['aadhar_number']}';
-    } else if (party['register_type'] == '3') {
-      if (party['is_scaffolding_id'] == true &&
-          party['scaffolding_id'] != null) {
-        return 'ID: ${party['scaffolding_id']}';
-      } else if (party['mobile_number'] != null) {
-        return 'Mobile: ${party['mobile_number']}';
-      }
+    } else if (party['mobile'] != null && party['mobile'].toString().isNotEmpty) {
+      return 'Mobile: ${party['mobile']}';
     }
     return '';
   }
 
   Future<bool> _hasBankDetails() async {
-    final prefs = await SharedPreferences.getInstance();
-    final upiId = prefs.getString('upiId') ?? '';
-    return upiId.isNotEmpty;
+    try {
+      final appController = AppController.to;
+      final companyId = appController.companyId;
+      if (companyId == null) return false;
+
+      final bankDetails = await appController.companyService.getBankDetails(companyId);
+      return bankDetails != null && bankDetails.isNotEmpty;
+    } catch (e) {
+      return false;
+    }
   }
 
   String getRegistrationTypeLabel(Map<String, dynamic> party) {
-    if (party['register_type'] == '1') {
-      return 'GST Registered';
-    } else if (party['register_type'] == '2') {
-      return 'Unregistered';
-    } else if (party['register_type'] == '3') {
-      return 'Existing User';
+    final partyType = party['party_type'] ?? 'customer';
+    if (partyType == 'customer') {
+      return 'Customer';
+    } else if (partyType == 'supplier') {
+      return 'Supplier';
+    } else {
+      return 'Both';
     }
-    return 'Unknown';
   }
 
   @override
@@ -391,19 +326,19 @@ class _CoustomersState extends State<Coustomers> {
                             final registrationType =
                                 getRegistrationTypeLabel(customerData);
 
-                            // Determine registration status icon/color
+                            final partyType = customerData['party_type'] ?? 'customer';
                             IconData statusIcon;
                             Color statusColor;
 
-                            if (customerData['register_type'] == '1') {
+                            if (partyType == 'supplier') {
                               statusIcon = Icons.business;
                               statusColor = Colors.green;
-                            } else if (customerData['register_type'] == '2') {
+                            } else if (partyType == 'customer') {
                               statusIcon = Icons.person;
-                              statusColor = Colors.orange;
+                              statusColor = Colors.blue;
                             } else {
                               statusIcon = Icons.account_circle;
-                              statusColor = Colors.blue;
+                              statusColor = Colors.orange;
                             }
 
                             return Padding(
@@ -501,20 +436,6 @@ class _CoustomersState extends State<Coustomers> {
                                             size: 13,
                                             weight: FontWeight.w400,
                                           ),
-                                          // Show additional info for Aadhaar parties
-                                          if (customerData['register_type'] ==
-                                                  '2' &&
-                                              customerData['aadhaar_dob'] !=
-                                                  null) ...[
-                                            const SizedBox(height: 4),
-                                            CustomText(
-                                              text:
-                                                  "DOB: ${customerData['aadhaar_dob']}",
-                                              color: Colors.black54,
-                                              size: 12,
-                                              weight: FontWeight.w400,
-                                            ),
-                                          ],
                                           const SizedBox(height: 8),
                                           Row(
                                             mainAxisAlignment:
@@ -535,14 +456,7 @@ class _CoustomersState extends State<Coustomers> {
                                                   },
                                                   tooltip: "Send Email",
                                                 ),
-                                              if (customerData[
-                                                          'mobile_number'] !=
-                                                      null ||
-                                                  (customerData['contacts'] !=
-                                                          null &&
-                                                      (customerData['contacts']
-                                                              as List)
-                                                          .isNotEmpty))
+                                              if (customerData['mobile'] != null)
                                                 IconButton(
                                                   icon: const Icon(Icons.phone,
                                                       color: Colors.green),

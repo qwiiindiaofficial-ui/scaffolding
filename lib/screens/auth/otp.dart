@@ -1,24 +1,30 @@
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
+import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pinput/pinput.dart';
+import 'package:scaffolding_sale/controllers/app_controller.dart';
 import 'package:scaffolding_sale/screens/auth/register/form.dart';
-import 'package:scaffolding_sale/screens/home/home.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:scaffolding_sale/utils/app_helpers.dart';
 
 import '../../utils/colors.dart';
 import '../../widgets/button.dart';
 import '../../widgets/logo.dart';
 import '../../widgets/text.dart';
 
-class OTPScreen extends StatelessWidget {
+class OTPScreen extends StatefulWidget {
   final String phone;
-  final String otp;
 
-  const OTPScreen({super.key, required this.otp, required this.phone});
+  const OTPScreen({super.key, required this.phone});
+
+  @override
+  State<OTPScreen> createState() => _OTPScreenState();
+}
+
+class _OTPScreenState extends State<OTPScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final phone = widget.phone;
     return Scaffold(
       backgroundColor: ThemeColors.kPrimaryThemeColor,
       resizeToAvoidBottomInset: true,
@@ -98,21 +104,18 @@ class OTPScreen extends StatelessWidget {
                     separatorBuilder: (index) => const SizedBox(width: 8),
                     hapticFeedbackType: HapticFeedbackType.lightImpact,
                     onCompleted: (pin) async {
-                      if (pin == otp) {
-                        SharedPreferences preferences =
-                            await SharedPreferences.getInstance();
-
-                        preferences.setString("phone", phone);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) {
-                              return RegisterForm(phone: phone);
-                            },
-                          ),
-                        );
-                      } else {
-                        Fluttertoast.showToast(msg: "Invalid OTP");
+                      try {
+                        showLoadingDialog('Verifying OTP...');
+                        final phoneNumber = '+91${widget.phone}';
+                        await AppController.to.verifyOTP(phoneNumber, pin);
+                        closeLoadingDialog();
+                        showSuccess('Phone verified successfully');
+                        if (mounted) {
+                          Get.to(() => RegisterForm(phone: widget.phone));
+                        }
+                      } catch (e) {
+                        closeLoadingDialog();
+                        showError('Invalid OTP');
                       }
                     },
                     onChanged: (value) {
@@ -136,10 +139,9 @@ class OTPScreen extends StatelessWidget {
                 ),
                 PrimaryButton(
                     onTap: () {
-                      Fluttertoast.showToast(msg: "Please Enter Valid OTP");
+                      showError("Please Enter Valid OTP");
                     },
                     text: "Continue"),
-                // Add extra padding when keyboard is visible
                 SizedBox(
                   height: MediaQuery.of(context).viewInsets.bottom > 0 ? 20 : 0,
                 ),
